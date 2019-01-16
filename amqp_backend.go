@@ -18,7 +18,7 @@ type AMQPCeleryBackend struct {
 
 // NewAMQPCeleryBackendByConnAndChannel creates new AMQPCeleryBackend by AMQP conn and channel
 func NewAMQPCeleryBackendByConnAndChannel(conn *amqp.Connection, channel *amqp.Channel) *AMQPCeleryBackend {
-	// ensure exchange is initialized
+	// ensure Exchange is initialized
 	backend := &AMQPCeleryBackend{
 		Channel:    channel,
 		connection: conn,
@@ -41,7 +41,7 @@ func (b *AMQPCeleryBackend) Reconnect() {
 	b.connection = conn
 }
 
-// GetResult retrieves result from AMQP queue
+// GetResult retrieves result from AMQP Queue
 func (b *AMQPCeleryBackend) GetResult(taskID string) (*ResultMessage, error) {
 
 	queueName := strings.Replace(taskID, "-", "", -1)
@@ -109,7 +109,7 @@ func (b *AMQPCeleryBackend) GetResult(taskID string) (*ResultMessage, error) {
 	*/
 }
 
-// SetResult sets result back to AMQP queue
+// SetResult sets result back to AMQP Queue
 func (b *AMQPCeleryBackend) SetResult(taskID string, result *ResultMessage) error {
 
 	result.ID = taskID
@@ -118,7 +118,7 @@ func (b *AMQPCeleryBackend) SetResult(taskID string, result *ResultMessage) erro
 	queueName := strings.Replace(taskID, "-", "", -1)
 
 	// autodelete is automatically set to true by python
-	// (406) PRECONDITION_FAILED - inequivalent arg 'durable' for queue 'bc58c0d895c7421eb7cb2b9bbbd8b36f' in vhost '/': received 'true' but current is 'false'
+	// (406) PRECONDITION_FAILED - inequivalent arg 'durable' for Queue 'bc58c0d895c7421eb7cb2b9bbbd8b36f' in vhost '/': received 'true' but current is 'false'
 
 	args := amqp.Table{"x-expires": int32(86400000)}
 	_, err := b.QueueDeclare(

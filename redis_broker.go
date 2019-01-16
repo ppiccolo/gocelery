@@ -44,7 +44,7 @@ func NewRedisCeleryBroker(uri string) *RedisCeleryBroker {
 	}
 }
 
-// SendCeleryMessage sends CeleryMessage to redis queue
+// SendCeleryMessage sends CeleryMessage to redis Queue
 func (cb *RedisCeleryBroker) SendCeleryMessage(message *CeleryMessage) error {
 	jsonBytes, err := json.Marshal(message)
 	if err != nil {
@@ -59,7 +59,7 @@ func (cb *RedisCeleryBroker) SendCeleryMessage(message *CeleryMessage) error {
 	return nil
 }
 
-// GetCeleryMessage retrieves celery message from redis queue
+// GetCeleryMessage retrieves celery message from redis Queue
 func (cb *RedisCeleryBroker) GetCeleryMessage() (*CeleryMessage, error) {
 	conn := cb.Get()
 	defer conn.Close()
@@ -81,7 +81,7 @@ func (cb *RedisCeleryBroker) GetCeleryMessage() (*CeleryMessage, error) {
 	return &message, nil
 }
 
-// GetTaskMessage retrieves task message from redis queue
+// GetTaskMessage retrieves task message from redis Queue
 func (cb *RedisCeleryBroker) GetTaskMessage() (*TaskMessage, error) {
 	celeryMessage, err := cb.GetCeleryMessage()
 	if err != nil {

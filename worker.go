@@ -2,10 +2,17 @@ package gocelery
 
 import (
 	"fmt"
+	"github.com/streadway/amqp"
 	"log"
 	"reflect"
 	"sync"
 )
+
+type DeliveredMessage struct {
+	messageChannel chan *TaskMessage
+	delivery       *amqp.Delivery
+	err            error
+}
 
 // CeleryWorker represents distributed task worker
 type CeleryWorker struct {
@@ -16,57 +23,123 @@ type CeleryWorker struct {
 	taskLock        sync.RWMutex
 	stopChannel     chan struct{}
 	workWG          sync.WaitGroup
+	delivered       *DeliveredMessage
 }
 
 // NewCeleryWorker returns new celery worker
 func NewCeleryWorker(broker CeleryBroker, backend CeleryBackend, numWorkers int) *CeleryWorker {
+
 	return &CeleryWorker{
 		broker:          broker,
 		backend:         backend,
 		numWorkers:      numWorkers,
 		registeredTasks: make(map[string]interface{}),
+		delivered: &DeliveredMessage{
+			messageChannel: make(chan *TaskMessage),
+			delivery:       nil,
+			err:            nil,
+		},
 	}
+}
+
+func (w *CeleryWorker) consume(x int) {
+	trace.Infof("Entering Consume %v...\n", x)
+
+	taskMessage, delivery, err := w.broker.GetTaskMessage()
+	w.delivered.messageChannel <- taskMessage
+	w.delivered.delivery = delivery
+	w.delivered.err = err
+
+	trace.Debugf("Exiting Consume %v...\n", x)
+
+	x++
+
+	go w.consume(x)
 }
 
 // StartWorker starts celery worker
 func (w *CeleryWorker) StartWorker() {
 
-	w.stopChannel = make(chan struct{}, 1)
+	w.stopChannel = make(chan struct{})
 	w.workWG.Add(w.numWorkers)
 
 	for i := 0; i < w.numWorkers; i++ {
 		go func(workerID int) {
 			defer w.workWG.Done()
+
+			go w.consume(0)
+
 			for {
 				select {
 				case <-w.stopChannel:
+					log.Printf("WORKER %d received STOP\n", workerID)
 					return
-				default:
 
-					// process messages
-					taskMessage, err := w.broker.GetTaskMessage()
-					if err != nil || taskMessage == nil {
+				case msg := <-w.delivered.messageChannel:
+
+					log.Printf("WORKER %d received MESSAGE \n", workerID)
+					if w.delivered.err != nil || msg == nil {
 						continue
 					}
 
-					//log.Printf("WORKER %d task message received: %v\n", workerID, taskMessage)
+					log.Printf("WORKER %d task message received\n", workerID)
 
 					// run task
-					resultMsg, err := w.RunTask(taskMessage)
+					resultMsg, err := w.RunTask(msg)
 					if err != nil {
 						log.Println(err)
+						w.delivered.delivery.Nack(false, true)
 						continue
 					}
-					defer releaseResultMessage(resultMsg)
+					if w.broker.GetAckLate() {
+						log.Printf("WORKER %d task completed %v\n", workerID, resultMsg)
+						w.delivered.delivery.Ack(false)
+					}
+					log.Printf("WORKER %d task completed %v\n", workerID, resultMsg)
 
-					// push result to backend
-					err = w.backend.SetResult(taskMessage.ID, resultMsg)
-					if err != nil {
-						log.Println(err)
-						continue
-					}
+					defer releaseResultMessage(resultMsg)
 				}
 			}
+
+			//for {
+			//	select {
+			//	case <-w.stopChannel:
+			//		log.Printf("WORKER %d stop received\n", workerID)
+			//		return
+			//	default:
+			//		log.Printf("WORKER %d check for message\n", workerID)
+			//
+			//		// process messages
+			//		taskMessage, ack, err := w.broker.GetTaskMessage()
+			//		if err != nil || taskMessage == nil {
+			//			continue
+			//		}
+			//
+			//		log.Printf("WORKER %d task message received\n", workerID)
+			//
+			//		// run task
+			//		resultMsg, err := w.RunTask(taskMessage)
+			//		if err != nil {
+			//			log.Println(err)
+			//			ack.Nack(false, true)
+			//			continue
+			//		}
+			//		if w.broker.GetAckLate() {
+			//			log.Printf("WORKER %d task completed %v\n", workerID, resultMsg)
+			//			ack.Ack(false)
+			//		}
+			//		log.Printf("WORKER %d task completed %v\n", workerID, resultMsg)
+			//
+			//		defer releaseResultMessage(resultMsg)
+			//
+			//		// push result to backend
+			//		//err = w.backend.SetResult(taskMessage.ID, resultMsg)
+			//		//if err != nil {
+			//		//	log.Println(err)
+			//		//	continue
+			//		//}
+			//	}
+			//}
 		}(i)
 	}
 }
@@ -74,7 +147,12 @@ func (w *CeleryWorker) StartWorker() {
 // StopWorker stops celery workers
 func (w *CeleryWorker) StopWorker() {
 	for i := 0; i < w.numWorkers; i++ {
+		log.Printf("Sending Stop to WORKER %d \n", i)
+
 		w.stopChannel <- struct{}{}
+
+		log.Printf("Stop Sent to WORKER %d \n", i)
+
 	}
 	w.workWG.Wait()
 }
@@ -115,7 +193,7 @@ func (w *CeleryWorker) RunTask(message *TaskMessage) (*ResultMessage, error) {
 	// convert to task interface
 	taskInterface, ok := task.(CeleryTask)
 	if ok {
-		//log.Println("using task interface")
+		log.Println("using task interface")
 		if err := taskInterface.ParseKwargs(message.Kwargs); err != nil {
 			return nil, err
 		}
@@ -125,7 +203,7 @@ func (w *CeleryWorker) RunTask(message *TaskMessage) (*ResultMessage, error) {
 		}
 		return getResultMessage(val), err
 	}
-	//log.Println("using reflection")
+	log.Println("using reflection")
 
 	// use reflection to execute function ptr
 	taskFunc := reflect.ValueOf(task)

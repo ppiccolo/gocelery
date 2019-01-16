@@ -2,12 +2,13 @@ package gocelery
 
 import (
 	"fmt"
+	"github.com/streadway/amqp"
 	"time"
 )
 
 // CeleryClient provides API for sending celery tasks
 type CeleryClient struct {
-	broker  CeleryBroker
+	Broker  CeleryBroker
 	backend CeleryBackend
 	worker  *CeleryWorker
 }
@@ -15,7 +16,11 @@ type CeleryClient struct {
 // CeleryBroker is interface for celery broker database
 type CeleryBroker interface {
 	SendCeleryMessage(*CeleryMessage) error
-	GetTaskMessage() (*TaskMessage, error) // must be non-blocking
+	GetTaskMessage() (*TaskMessage, *amqp.Delivery, error) // must be non-blocking
+	GetAckLate() bool
+	GetExchange() string
+	GetQueue() string
+	GetConnection() *amqp.Connection
 }
 
 // CeleryBackend is interface for celery backend database
@@ -52,25 +57,34 @@ func (cc *CeleryClient) StopWorker() {
 func (cc *CeleryClient) Delay(task string, args ...interface{}) (*AsyncResult, error) {
 	celeryTask := getTaskMessage(task)
 	celeryTask.Args = args
-	return cc.delay(celeryTask)
+	return cc.delay(celeryTask, "celery", "celery")
 }
 
 // DelayKwargs gets asynchronous results with argument map
 func (cc *CeleryClient) DelayKwargs(task string, args map[string]interface{}) (*AsyncResult, error) {
 	celeryTask := getTaskMessage(task)
 	celeryTask.Kwargs = args
-	return cc.delay(celeryTask)
+	return cc.delay(celeryTask, "celery", "celery")
 }
 
-func (cc *CeleryClient) delay(task *TaskMessage) (*AsyncResult, error) {
+func (cc *CeleryClient) ApplyAsync(task string, exchange string, routingKey string, kwargs interface{}, args ...interface{}) (*AsyncResult, error) {
+	celeryTask := getTaskMessage(task)
+	celeryTask.Args = args
+	celeryTask.Kwargs = kwargs
+	return cc.delay(celeryTask, exchange, routingKey)
+
+}
+
+func (cc *CeleryClient) delay(task *TaskMessage, exchange string, routingKey string) (*AsyncResult, error) {
 	defer releaseTaskMessage(task)
 	encodedMessage, err := task.Encode()
 	if err != nil {
 		return nil, err
 	}
-	celeryMessage := getCeleryMessage(encodedMessage)
+
+	celeryMessage := getCeleryMessage(encodedMessage, exchange, routingKey)
 	defer releaseCeleryMessage(celeryMessage)
-	err = cc.broker.SendCeleryMessage(celeryMessage)
+	err = cc.Broker.SendCeleryMessage(celeryMessage)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +101,7 @@ func (cc *CeleryClient) delay(task *TaskMessage) (*AsyncResult, error) {
 type CeleryTask interface {
 
 	// ParseKwargs - define a method to parse kwargs
-	ParseKwargs(map[string]interface{}) error
+	ParseKwargs(interface{}) error
 
 	// RunTask - define a method to run
 	RunTask() (interface{}, error)

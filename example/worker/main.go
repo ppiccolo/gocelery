@@ -19,8 +19,8 @@ type AddTask struct {
 }
 
 // ParseKwargs parses kwargs
-func (a *AddTask) ParseKwargs(kwargs map[string]interface{}) error {
-	kwargA, ok := kwargs["x"]
+func (a *AddTask) ParseKwargs(kwargs interface{}) error {
+	kwargA, ok := kwargs.(map[string]interface{})["x"]
 	if !ok {
 		return fmt.Errorf("undefined kwarg x")
 	}
@@ -29,7 +29,7 @@ func (a *AddTask) ParseKwargs(kwargs map[string]interface{}) error {
 		return fmt.Errorf("malformed kwarg x")
 	}
 	a.a = int(kwargAFloat)
-	kwargB, ok := kwargs["y"]
+	kwargB, ok := kwargs.(map[string]interface{})["y"]
 	if !ok {
 		return fmt.Errorf("undefined kwarg y")
 	}
@@ -63,6 +63,8 @@ func main() {
 	// this worker uses args
 	celeryClient.Register("worker.add", add)
 	celeryClient.Register("worker.add_reflect", &AddTask{})
+
+	celeryClient.DelayKwargs()
 
 	// Start Worker - blocking method
 	go celeryClient.StartWorker()

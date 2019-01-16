@@ -3,7 +3,7 @@ Package gocelery is Celery Distributed Task Queue in Go
 
 Celery distributed tasks are used heavily in many python web applications and this library allows you to implement celery workers in Go as well as being able to submit celery tasks in Go.
 
-This package can also be used as pure go distributed task queue.
+This package can also be used as pure go distributed task Queue.
 
 Supported brokers/backends
 

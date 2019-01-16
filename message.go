@@ -49,8 +49,10 @@ var celeryMessagePool = sync.Pool{
 	},
 }
 
-func getCeleryMessage(encodedTaskMessage string) *CeleryMessage {
+func getCeleryMessage(encodedTaskMessage string, exchange string, routingKey string) *CeleryMessage {
 	msg := celeryMessagePool.Get().(*CeleryMessage)
+	msg.Properties.DeliveryInfo.Exchange = exchange
+	msg.Properties.DeliveryInfo.RoutingKey = routingKey
 	msg.Body = encodedTaskMessage
 	return msg
 }
@@ -74,7 +76,7 @@ type CeleryProperties struct {
 type CeleryDeliveryInfo struct {
 	Priority   int    `json:"priority"`
 	RoutingKey string `json:"routing_key"`
-	Exchange   string `json:"exchange"`
+	Exchange   string `json:"Exchange"`
 }
 
 // GetTaskMessage retrieve and decode task messages from broker
@@ -105,12 +107,12 @@ func (cm *CeleryMessage) GetTaskMessage() *TaskMessage {
 
 // TaskMessage is celery-compatible message
 type TaskMessage struct {
-	ID      string                 `json:"id"`
-	Task    string                 `json:"task"`
-	Args    []interface{}          `json:"args"`
-	Kwargs  map[string]interface{} `json:"kwargs"`
-	Retries int                    `json:"retries"`
-	ETA     string                 `json:"eta"`
+	ID      string        `json:"id"`
+	Task    string        `json:"task"`
+	Args    []interface{} `json:"args"`
+	Kwargs  interface{}   `json:"kwargs"`
+	Retries int           `json:"retries"`
+	ETA     string        `json:"eta"`
 }
 
 func (tm *TaskMessage) reset() {
